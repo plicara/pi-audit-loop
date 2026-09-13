@@ -81,8 +81,15 @@ describe("AuditLoopMachine", () => {
 			m.start("src/");
 			m.review("changes_requested", 1);
 			const r = assertErr(m.review("changes_requested", 1));
-			expect(r.error).toContain("phase simplif");
+			expect(r.error).toContain("phase simplify");
 			expect(r.expectedTool).toBe("audit_simplify");
+		});
+
+		it("a review does not report its files as changed", () => {
+			const m = new AuditLoopMachine();
+			m.start("src/");
+			const r = assertOk(m.review("clean", 0, ["src/a.ts", "src/b.ts"]));
+			expect(r.state.lastChangedFiles).toEqual([]);
 		});
 	});
 

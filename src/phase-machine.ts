@@ -139,7 +139,7 @@ export class AuditLoopMachine {
 	}
 
 	/** Record a review verdict. Only legal while phase === review. */
-	review(verdict: Verdict, findings: number, changedFiles: string[] = []): LoopResult {
+	review(verdict: Verdict, findings: number, reviewedFiles: string[] = []): LoopResult {
 		if (this.state_.phase !== "review") {
 			return REJECT(this, `audit_review refused: the loop is in phase ${this.state_.phase}, not review.`);
 		}
@@ -147,12 +147,14 @@ export class AuditLoopMachine {
 			return REJECT(this, "audit_review refused: verdict=changes_requested with 0 findings is self-contradictory. Use verdict=clean with 0 findings.");
 		}
 		this.state_.lastFindings = Math.max(0, Math.floor(findings));
-		this.state_.lastChangedFiles = [...changedFiles];
+		// A review reports files *reviewed*, not changed. Leave lastChangedFiles
+		// pointing at the most recent simplify pass, so an untouched tree does
+		// not report phantom changes in audit_loop_status.
 		if (verdict === "clean") {
 			this.state_.phase = "done";
 			this.state_.endedAt = this.stamp();
 			this.state_.doneReason = "review_clean";
-			this.push("review", "done", "verdict: clean");
+			this.push("review", "done", `verdict: clean (${reviewedFiles.length} file(s) reviewed)`);
 			return {
 				ok: true,
 				state: this.snapshot(),
@@ -171,7 +173,7 @@ export class AuditLoopMachine {
 	/** Record a simplify pass. Only legal while phase === simplify. */
 	simplify(changed: boolean, files: string[] = []): LoopResult {
 		if (this.state_.phase !== "simplify") {
-			return REJECT(this, `audit_simplify refused: the loop is in phase ${this.state_.phase}, not simplif.`);
+			return REJECT(this, `audit_simplify refused: the loop is in phase ${this.state_.phase}, not simplify.`);
 		}
 		if (!changed && files.length > 0) {
 			return REJECT(this, "audit_simplify refused: changed=false but files were listed. A pass that changed nothing must list no files.");
