@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createAuditLoopExtension } from "../extensions/index.ts";
+import * as extModule from "../extensions/index.ts";
 
 interface FakeTool {
 	name: string;
@@ -36,6 +37,17 @@ function buildHarness(maxRounds?: number) {
 const resultText = (r: ToolOutcome) => ({ text: r.content?.[0]?.text ?? "", isError: r.isError ?? false });
 
 describe("audit-loop pi extension", () => {
+	it("default export is the factory pi invokes at load time", () => {
+		// Regression: exporting the cuured creator (createAuditLoopExtension)
+		// makes pi call IT as the factory, so nothing registers — silently.
+		expect(typeof extModule.default).toBe("function");
+		const tools = new Map<string, FakeTool>();
+		const fakePi = { registerTool(t: FakeTool) { tools.set(t.name, t); }, appendEntry() {} } as unknown as ExtensionAPI;
+		(extModule.default as (pi: ExtensionAPI) => void)(fakePi);
+		expect(tools.has("audit_loop_start")).toBe(true);
+		expect(tools.size).toBe(5);
+	});
+
 	it("registers the five tools", () => {
 		const { tools } = buildHarness();
 		for (const name of [
