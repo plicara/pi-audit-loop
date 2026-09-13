@@ -44,6 +44,30 @@ describe("package integrity", () => {
 		expect(simplify).toContain("be4e44a");
 	});
 
+	it("is discoverable in the package gallery (pi-package keyword)", () => {
+		const pkg = readJson("package.json");
+		expect(pkg.keywords).toContain("pi-package");
+	});
+
+	it("declares pi-bundled core packages as peers, not runtime deps", () => {
+		// pi bundles typebox for extensions; importing it at runtime means it
+		// must be a peer dependency, never a plain runtime dependency.
+		const pkg = readJson("package.json");
+		expect(pkg.peerDependencies?.typebox).toBe("*");
+		expect(pkg.peerDependencies?.["@earendil-works/pi-coding-agent"]).toBeTruthy();
+		expect(pkg.dependencies?.typebox).toBeUndefined();
+	});
+
+	it("ships the full Apache-2.0 text for the vendored Apache-2.0 skill", () => {
+		// Apache-2.0 §4(a): recipients must receive a copy of the License.
+		const path = join(ROOT, "skills", "code-review", "LICENSE");
+		expect(existsSync(path), "skills/code-review/LICENSE exists").toBe(true);
+		const src = readFileSync(path, "utf8");
+		expect(src).toContain("Apache License");
+		expect(src).toContain("Version 2.0, January 2004");
+		expect(src).toContain("Redistribution");
+	});
+
 	it("no stray jsonl or credential files are tracked in skills", () => {
 		const walk = (p: string): string[] =>
 			readdirSync(p, { withFileTypes: true }).flatMap((e) => {

@@ -2,7 +2,7 @@
   "name": "@plicara/pi-audit-loop",
   "version": "0.1.0",
   "description": "Audit loop for pi: alternating structural code review (anthropics code-review) and behavior-preserving code simplification (addyosmani code-simplification) until convergence.",
-  "keywords": ["pi", "pi-extension", "audit", "code-review", "simplify", "skill"],
+  "keywords": ["pi", "pi-package", "pi-extension", "audit", "code-review", "simplify", "skill"],
   "license": "MIT",
   "type": "module",
   "files": ["extensions/", "skills/", "src/", "README.md", "LICENSE", "SOURCES.md"],
@@ -23,6 +23,7 @@
     "vitest": "^3.2.4"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.84.2"
+    "@earendil-works/pi-coding-agent": ">=0.84.2",
+    "typebox": "*"
   }
 }
