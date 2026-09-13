@@ -51,6 +51,10 @@ export interface LoopState {
 	lastFindings: number;
 	/** Files reported as changed by the most recent simplify pass. */
 	lastChangedFiles: string[];
+	/** The verification command for this loop, when one was given. */
+	testCommand?: string;
+	/** True when the verification command has run successfully since the last change. */
+	testVerified: boolean;
 }
 
 export type LoopDoneReason = "review_clean" | "nothing_left" | "budget_exhausted" | "stopped";
@@ -74,6 +78,7 @@ export class AuditLoopMachine {
 		round: 0,
 		lastFindings: 0,
 		lastChangedFiles: [],
+		testVerified: false,
 	};
 
 	constructor(config?: Partial<LoopConfig>) {
@@ -116,7 +121,7 @@ export class AuditLoopMachine {
 	}
 
 	/** Begin a loop. Allowed from idle or from a completed loop. */
-	start(scope: string): LoopResult {
+	start(scope: string, testCommand?: string): LoopResult {
 		if (this.state_.phase === "review" || this.state_.phase === "simplify") {
 			return REJECT(
 				this,
@@ -126,6 +131,7 @@ export class AuditLoopMachine {
 		if (!scope || !scope.trim()) {
 			return REJECT(this, "audit_loop_start refused: scope is required (a path, a diff range, or a description of what to audit).");
 		}
+		const command = testCommand?.trim();
 		this.state_ = {
 			phase: "review",
 			round: 0,
@@ -133,6 +139,8 @@ export class AuditLoopMachine {
 			startedAt: this.stamp(),
 			lastFindings: 0,
 			lastChangedFiles: [],
+			...(command ? { testCommand: command } : {}),
+			testVerified: false,
 		};
 		this.push("start", "review", `scope: ${scope.trim()}`);
 		return { ok: true, state: this.snapshot(), message: `Audit loop started on: ${scope.trim()}. Next: audit_review.` };
@@ -147,6 +155,16 @@ export class AuditLoopMachine {
 			return REJECT(this, "audit_review refused: verdict=changes_requested with 0 findings is self-contradictory. Use verdict=clean with 0 findings.");
 		}
 		this.state_.lastFindings = Math.max(0, Math.floor(findings));
+		// Verification is enforced, not requested: when the loop has a test
+		// command, "clean" is refused until that command has actually passed
+		// since the last change. The extension observes tool executions and
+		// reports the result through recordTestRun().
+		if (verdict === "clean" && this.state_.testCommand && !this.state_.testVerified) {
+			return REJECT(
+				this,
+				`audit_review refused: verdict=clean needs a successful run of the loop's test command since the last change. Run it first: ${this.state_.testCommand}`,
+			);
+		}
 		// A review reports files *reviewed*, not changed. Leave lastChangedFiles
 		// pointing at the most recent simplify pass, so an untouched tree does
 		// not report phantom changes in audit_loop_status.
@@ -190,6 +208,8 @@ export class AuditLoopMachine {
 			return { ok: true, state: this.snapshot(), message: "Simplification pass changed nothing. Audit loop complete." };
 		}
 		this.state_.round += 1;
+		// The pass changed code, so any earlier test run no longer covers it.
+		this.state_.testVerified = false;
 		if (this.state_.round > this.maxRounds) {
 			this.state_.phase = "done";
 			this.state_.endedAt = this.stamp();
@@ -212,6 +232,16 @@ export class AuditLoopMachine {
 				`Review the diff of those files (e.g. \`git diff -- <files>\`), not just the tests: ` +
 				`a green suite does not prove the change preserved behavior.`,
 		};
+	}
+
+	/**
+	 * Record the outcome of the loop's verification command. Called by the
+	 * extension when it observes the command run (see the tool execution
+	 * handlers), so a clean verdict rests on an observed run rather than on the
+	 * model's word.
+	 */
+	recordTestRun(succeeded: boolean): void {
+		this.state_.testVerified = succeeded;
 	}
 
 	/** Manual stop from any running phase. */

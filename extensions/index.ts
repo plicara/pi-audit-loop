@@ -55,6 +55,30 @@ export function createAuditLoopExtension(options: AuditLoopExtensionOptions = {}
 			return text(result.message);
 		};
 
+		// Verification gate. The machine refuses a clean verdict until the loop's
+		// test command has actually passed, and it can only know that if we tell
+		// it. We watch tool executions: capture the bash invocation that runs the
+		// command, then report its outcome when it finishes. The pi bash tool
+		// throws on a non-zero exit, so isError is exactly "the command failed".
+		const pendingTestRuns = new Set<string>();
+		const normalize = (value: string) => value.replace(/\s+/g, " ").trim();
+
+		pi.on("tool_execution_start", (event) => {
+			if (!machine.isRunning) return;
+			const command = machine.snapshot().testCommand;
+			if (!command || event.toolName !== "bash") return;
+			const invoked = String((event.args as { command?: unknown } | undefined)?.command ?? "");
+			if (invoked && normalize(invoked).includes(normalize(command))) {
+				pendingTestRuns.add(event.toolCallId);
+			}
+		});
+
+		pi.on("tool_execution_end", (event) => {
+			if (pendingTestRuns.delete(event.toolCallId)) {
+				machine.recordTestRun(!event.isError);
+			}
+		});
+
 		pi.registerTool({
 			name: "audit_loop_start",
 			label: "Audit Loop Start",
@@ -72,7 +96,7 @@ export function createAuditLoopExtension(options: AuditLoopExtensionOptions = {}
 			}),
 			async execute(_toolCallId: string, params, _signal, _onUpdate, ctx) {
 				void ctx;
-				return commit(machine.start(params.scope));
+				return commit(machine.start(params.scope, params.test_command));
 			},
 		});
 
