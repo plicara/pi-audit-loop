@@ -144,4 +144,8 @@ export function createAuditLoopExtension(options: AuditLoopExtensionOptions = {}
 export { AuditLoopMachine };
 export type { LoopResult, LoopState } from "../src/phase-machine.ts";
 
-export default createAuditLoopExtension;
+/**
+ * Default export must be the extension factory itself: pi invokes the
+ * package's default export as factory(pi) at load time.
+ */
+export default createAuditLoopExtension();
