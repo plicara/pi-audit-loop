@@ -114,6 +114,7 @@ describe("AuditLoopMachine", () => {
 			expect(r.state.lastChangedFiles).toEqual(["src/a.ts"]);
 			expect(m.expectedTool()).toBe("audit_review");
 			expect(r.message).toContain("audit_review");
+			expect(r.message).toContain("diff");
 		});
 
 		it("rejects changed=false with files listed", () => {

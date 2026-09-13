@@ -206,7 +206,11 @@ export class AuditLoopMachine {
 		return {
 			ok: true,
 			state: this.snapshot(),
-			message: `Simplification applied to ${files.length} file(s) in pass ${this.state_.round}. Verify with the test suite, then call audit_review.`,
+			message:
+				`Simplification applied to ${files.length} file(s) in pass ${this.state_.round}. ` +
+				`Verify with the test suite, then call audit_review. ` +
+				`Review the diff of those files (e.g. \`git diff -- <files>\`), not just the tests: ` +
+				`a green suite does not prove the change preserved behavior.`,
 		};
 	}
 

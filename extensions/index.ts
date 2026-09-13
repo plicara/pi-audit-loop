@@ -80,7 +80,7 @@ export function createAuditLoopExtension(options: AuditLoopExtensionOptions = {}
 			name: "audit_review",
 			label: "Audit Review",
 			description:
-				"Record the result of an audit review (code-review skill). Use verdict=clean only when the review found no actionable findings; use verdict=changes_requested with a positive findings count otherwise. Run the test suite before recording clean.",
+				"Record the result of an audit review (code-review skill). Use verdict=clean only when the review found no actionable findings; use verdict=changes_requested with a positive findings count otherwise. Run the test suite before recording clean. If a simplification just ran, review that pass's diff — a green suite does not prove it preserved behavior.",
 			parameters: Type.Object({
 				verdict: Type.Enum(["clean", "changes_requested"]),
 				findings: Type.Optional(Type.Number({ description: "Number of actionable findings (0 for a clean review)." })),
