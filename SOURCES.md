@@ -14,7 +14,7 @@ loop works offline and unchanged). Attribution footers are in each SKILL.md.
 | Upstream | https://github.com/anthropics/knowledge-work-plugins `engineering/skills/code-review/SKILL.md` |
 | Pinned rev | `a6d8653261a4` (2026-09-12) |
 | License | Apache-2.0 (full text shipped at `skills/code-review/LICENSE`) |
-| Adapted | dropped Claude Code `/command` syntax and connector references; added the audit-loop verdict mapping (verdict → `audit_review` arguments); prose pass for pi |
+| Adapted | dropped Claude Code `/command` syntax and connector references; added the audit-loop verdict mapping (verdict → `audit_review` arguments); added the post-simplification diff review (a green suite does not prove a simplification preserved behavior); prose pass for pi |
 
 Refresh: `curl -fL https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/engineering/skills/code-review/SKILL.md -o skills/code-review/SKILL.md`, re-apply the two adaptations, update the pin + footer, run `npm run check`.
 
