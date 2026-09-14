@@ -10,10 +10,13 @@ sure the phases alternate and that the loop terminates.
 ## Install
 
 ```bash
-# from the registry (once published)
+# from the registry
 pi install npm:@plicara/pi-audit-loop
 
-# local dev / tryout without installing
+# try it without installing
+pi -e npm:@plicara/pi-audit-loop
+
+# local development against a checkout
 pi -e /path/to/pi-audit-loop
 ```
 
