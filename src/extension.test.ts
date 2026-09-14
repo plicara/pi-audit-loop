@@ -20,6 +20,7 @@ function buildHarness(maxRounds?: number) {
 	const tools = new Map<string, FakeTool>();
 	const entries: Array<{ type: string; data: unknown }> = [];
 	const changes: Array<{ phase: string; round: number }> = [];
+	const handlers = new Map<string, Array<(event: unknown) => void>>();
 	const fakePi = {
 		registerTool(tool: FakeTool) {
 			tools.set(tool.name, tool);
@@ -27,11 +28,17 @@ function buildHarness(maxRounds?: number) {
 		appendEntry(type: string, data: unknown) {
 			entries.push({ type, data });
 		},
+		on(event: string, handler: (e: unknown) => void) {
+			handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+		},
 	} as unknown as ExtensionAPI;
 	createAuditLoopExtension({ maxRounds, onStateChange: (s) => changes.push({ phase: s.phase, round: s.round }) })(fakePi);
 	const call = (name: string, params: Record<string, unknown>): Promise<ToolOutcome> =>
 		tools.get(name)!.execute("call_1", params, undefined, undefined, {});
-	return { tools, entries, changes, call };
+	const emit = (event: string, payload: unknown) => {
+		for (const handler of handlers.get(event) ?? []) handler(payload);
+	};
+	return { tools, entries, changes, call, emit };
 }
 
 const resultText = (r: ToolOutcome) => ({ text: r.content?.[0]?.text ?? "", isError: r.isError ?? false });
@@ -42,7 +49,7 @@ describe("audit-loop pi extension", () => {
 		// makes pi call IT as the factory, so nothing registers — silently.
 		expect(typeof extModule.default).toBe("function");
 		const tools = new Map<string, FakeTool>();
-		const fakePi = { registerTool(t: FakeTool) { tools.set(t.name, t); }, appendEntry() {} } as unknown as ExtensionAPI;
+		const fakePi = { registerTool(t: FakeTool) { tools.set(t.name, t); }, appendEntry() {}, on() {} } as unknown as ExtensionAPI;
 		(extModule.default as (pi: ExtensionAPI) => void)(fakePi);
 		expect(tools.has("audit_loop_start")).toBe(true);
 		expect(tools.size).toBe(5);
@@ -114,5 +121,33 @@ describe("audit-loop pi extension", () => {
 		const r = resultText(await call("audit_loop_status", {}));
 		expect(r.text).toContain("phase=review");
 		expect(r.text).toContain("next_tool=audit_review");
+	});
+
+	it("blocks a clean verdict until it observes the test command pass", async () => {
+		const { call, emit } = buildHarness();
+		await call("audit_loop_start", { scope: "src/", test_command: "npm test" });
+
+		const blocked = await call("audit_review", { verdict: "clean", findings: 0 });
+		expect(blocked.isError).toBe(true);
+		expect(resultText(blocked).text).toContain("npm test");
+
+		emit("tool_execution_start", { toolCallId: "t1", toolName: "bash", args: { command: "cd sub && npm test" } });
+		emit("tool_execution_end", { toolCallId: "t1", toolName: "bash", result: {}, isError: false });
+
+		const allowed = await call("audit_review", { verdict: "clean", findings: 0 });
+		expect(allowed.isError ?? false).toBe(false);
+	});
+
+	it("does not accept a failed run or an unrelated command as verification", async () => {
+		const { call, emit } = buildHarness();
+		await call("audit_loop_start", { scope: "src/", test_command: "npm test" });
+
+		emit("tool_execution_start", { toolCallId: "t1", toolName: "bash", args: { command: "npm test" } });
+		emit("tool_execution_end", { toolCallId: "t1", toolName: "bash", result: {}, isError: true });
+		expect((await call("audit_review", { verdict: "clean", findings: 0 })).isError).toBe(true);
+
+		emit("tool_execution_start", { toolCallId: "t2", toolName: "bash", args: { command: "ls -la" } });
+		emit("tool_execution_end", { toolCallId: "t2", toolName: "bash", result: {}, isError: false });
+		expect((await call("audit_review", { verdict: "clean", findings: 0 })).isError).toBe(true);
 	});
 });

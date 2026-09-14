@@ -13,8 +13,8 @@ loop works offline and unchanged). Attribution footers are in each SKILL.md.
 |---|---|
 | Upstream | https://github.com/anthropics/knowledge-work-plugins `engineering/skills/code-review/SKILL.md` |
 | Pinned rev | `a6d8653261a4` (2026-09-12) |
-| License | Apache-2.0 |
-| Adapted | dropped Claude Code `/command` syntax and connector references; added the audit-loop verdict mapping (verdict → `audit_review` arguments); prose pass for pi |
+| License | Apache-2.0 (full text shipped at `skills/code-review/LICENSE`) |
+| Adapted | dropped Claude Code `/command` syntax and connector references; added the audit-loop verdict mapping (verdict → `audit_review` arguments); added the post-simplification diff review (a green suite does not prove a simplification preserved behavior); prose pass for pi |
 
 Refresh: `curl -fL https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/engineering/skills/code-review/SKILL.md -o skills/code-review/SKILL.md`, re-apply the two adaptations, update the pin + footer, run `npm run check`.
 
@@ -34,5 +34,5 @@ Refresh: `curl -fL https://raw.githubusercontent.com/addyosmani/agent-skills/mai
 | Package | Pin | Why |
 |---|---|---|
 | `@earendil-works/pi-coding-agent` | `0.85.1` (dev) / `>=0.84.2` (peer) | Type surface for `ExtensionAPI` and tool registration; peer floor so the extension can't silently install on an incompatible runtime. |
-| `typebox` | `^0.2.0` | Tool parameter schemas, same as upstream pi extensions. |
+| `typebox` | `1.3.7` (dev) / `*` (peer) | Tool parameter schemas. Pi bundles typebox for extensions, so it is declared as a peer dependency (see pi packages docs); the dev pin exists only for local typecheck. |
 | `vitest` | `^3.2.4` | Test runner. |

@@ -48,9 +48,21 @@ audit_loop_start  →  audit_review  →  audit_simplify  →  audit_review  →
      open (default 3, configurable);
   4. `stopped` — manual stop.
 
-Every state transition is appended to the session log as an
-`audit_loop_state` custom entry, giving a post-hoc audit trail and a future
-resume hook.
+Every state transition is appended to the session log as an `audit_loop_state` custom entry, giving a post-hoc audit trail and a future resume hook.
+
+### What this enforces — and what it does not
+
+The extension enforces the **shape** of the loop, not the **content** of the work.
+
+| Enforced by the extension | The model's responsibility |
+|---|---|
+| Phase order; a wrong-phase call is refused | That a “simplification” actually preserves behavior |
+| Contradictions in the recorded data (`findings`, `files`) | That a review's findings are correct and complete |
+| The four termination gates | That the test suite was really run, and is worth running |
+
+The extension cannot see the diff, so it cannot tell a simplification from an ordinary edit. Behavior preservation rests on the vendored `code-simplification` skill and on your test suite — and a suite can pass while a behavior change introduces a regression the tests do not cover.
+
+That is why the review following a simplification examines **that pass's diff** rather than the files again. It is the difference between “the tests still pass” and “the change is equivalent”; the code-review skill's Scope section explains how. Treat a `review_clean` that follows a simplification as a claim to verify, not a fact.
 
 ## The skills
 

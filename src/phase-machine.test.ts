@@ -81,8 +81,15 @@ describe("AuditLoopMachine", () => {
 			m.start("src/");
 			m.review("changes_requested", 1);
 			const r = assertErr(m.review("changes_requested", 1));
-			expect(r.error).toContain("phase simplif");
+			expect(r.error).toContain("phase simplify");
 			expect(r.expectedTool).toBe("audit_simplify");
+		});
+
+		it("a review does not report its files as changed", () => {
+			const m = new AuditLoopMachine();
+			m.start("src/");
+			const r = assertOk(m.review("clean", 0, ["src/a.ts", "src/b.ts"]));
+			expect(r.state.lastChangedFiles).toEqual([]);
 		});
 	});
 
@@ -107,6 +114,7 @@ describe("AuditLoopMachine", () => {
 			expect(r.state.lastChangedFiles).toEqual(["src/a.ts"]);
 			expect(m.expectedTool()).toBe("audit_review");
 			expect(r.message).toContain("audit_review");
+			expect(r.message).toContain("diff");
 		});
 
 		it("rejects changed=false with files listed", () => {
@@ -202,6 +210,60 @@ describe("AuditLoopMachine", () => {
 			const s1 = m.snapshot();
 			s1.phase = "done";
 			expect(m.snapshot().phase).toBe("review");
+		});
+	});
+
+	describe("verification gate", () => {
+		it("refuses a clean verdict before the test command has run", () => {
+			const m = new AuditLoopMachine();
+			m.start("src/", "npm test");
+			const r = assertErr(m.review("clean", 0));
+			expect(r.error).toContain("test command");
+			expect(r.error).toContain("npm test");
+		});
+
+		it("refuses a clean verdict when the observed run failed", () => {
+			const m = new AuditLoopMachine();
+			m.start("src/", "npm test");
+			m.recordTestRun(false);
+			expect(assertErr(m.review("clean", 0)).error).toContain("test command");
+		});
+
+		it("allows a clean verdict once the test command passed", () => {
+			const m = new AuditLoopMachine();
+			m.start("src/", "npm test");
+			m.recordTestRun(true);
+			const r = assertOk(m.review("clean", 0));
+			expect(r.state.phase).toBe("done");
+			expect(r.state.doneReason).toBe("review_clean");
+		});
+
+		it("requires a fresh run after a simplify pass changes code", () => {
+			const m = new AuditLoopMachine();
+			m.start("src/", "npm test");
+			m.recordTestRun(true);
+			m.review("changes_requested", 1);
+			m.simplify(true, ["src/a.ts"]);
+			expect(assertErr(m.review("clean", 0)).error).toContain("test command");
+			m.recordTestRun(true);
+			expect(assertOk(m.review("clean", 0)).state.phase).toBe("done");
+		});
+
+		it("does not gate a loop started without a test command", () => {
+			const m = new AuditLoopMachine();
+			m.start("src/");
+			const r = assertOk(m.review("clean", 0));
+			expect(r.state.phase).toBe("done");
+			expect(r.state.testCommand).toBeUndefined();
+		});
+
+		it("forgets a passing run when a new loop starts", () => {
+			const m = new AuditLoopMachine();
+			m.start("src/", "npm test");
+			m.recordTestRun(true);
+			m.review("clean", 0);
+			m.start("src/", "npm test");
+			expect(assertErr(m.review("clean", 0)).error).toContain("test command");
 		});
 	});
 });
