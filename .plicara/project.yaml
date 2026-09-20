@@ -1,0 +1,12 @@
+schema_version: 1
+id: pi-audit-loop
+name: "pi audit loop"
+description: "A verification-gated review and simplification extension for pi."
+kind: tool
+status: maintained
+repository: https://github.com/plicara/pi-audit-loop
+artifacts:
+  - kind: reference
+    path: src
+  - kind: reference
+    path: SOURCES.md
