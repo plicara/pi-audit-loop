@@ -1,6 +1,6 @@
 ---
 name: code-simplification
-description: Simplifies code for clarity without changing behavior. Use when refactoring code for clarity, when code works but is harder to read, maintain, or extend than it should be, or when reviewing code that has accumulated unnecessary complexity. In the audit loop, use this skill to produce every audit_simplify pass.
+description: Simplifies code for clarity without changing behavior. Use when refactoring code for clarity, when code works but is harder to read, maintain, or extend than it should be, or when reviewing code that has accumulated unnecessary complexity. In the audit loop, use this skill for the simplify route of audit_change.
 ---
 
 # Code Simplification (audit loop)
@@ -170,10 +170,10 @@ If the "simplified" version is harder to understand or review, revert. Not every
 
 ## Verdict for the audit loop
 
-When the pass is the `audit_simplify` phase of the audit loop:
+When the initial review selects `route=simplify`:
 
-- Ran at least one behavior-preserving simplification, tests passed after each change, and the diff is committed or staged → call `audit_simplify` with `changed=true` and the modified files.
-- Nothing worth simplifying remains (code is already clean per the *When NOT to use* list) → call `audit_simplify` with `changed=false`. The loop treats that as convergence.
+- Made a behavior-preserving simplification → call `audit_change` with `kind=simplify`, `changed=true`, and the modified files; then call `audit_verify` and review the diff.
+- Nothing worth simplifying remains (code is already clean per the *When NOT to use* list) → call `audit_change` with `kind=simplify`, `changed=false`. The finding remains open.
 - A simplification looked promising but could not be made behavior-preserving → do not record it; report changed=true **only** for what you actually shipped.
 
 ## Language-Specific Guidance
@@ -300,4 +300,4 @@ After completing a simplification pass:
 
 ---
 
-*Vendored from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) `skills/code-simplification/SKILL.md` @ `be4e44a` (MIT; originally adapted by the author from anthropics/claude-plugins-official `plugins/code-simplifier`). Adapted for pi: convention-file references, audit-loop verdict mapping, prose line-length pass. See SOURCES.md.*
+*Vendored from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) `skills/code-simplification/SKILL.md` @ `be4e44a` (MIT; originally adapted by the author from anthropics/claude-plugins-official `plugins/code-simplifier`). Adapted for pi: convention-file references, `audit_change` simplify mapping, prose line-length pass. See SOURCES.md.*

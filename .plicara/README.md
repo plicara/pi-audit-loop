@@ -1,6 +1,6 @@
 # pi audit loop: lab context
 
-A verification-gated review and simplification extension for pi.
+A one-pass review, change, and verification workflow for pi.
 
 Lifecycle status and artifact locations are authoritative in [project.yaml](project.yaml). The [project README](../README.md) explains usage and the [agent instructions](../AGENTS.md) define scope and constraints. Start with `make setup` and `make check` at the repository root.
 

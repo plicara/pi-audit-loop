@@ -1,258 +1,144 @@
-/**
- * Audit loop phase machine — pure logic, no pi dependencies.
- *
- * The loop is a two-phase state machine with structural enforcement:
- *
- *   idle ──(start)──▶ review ──(clean)─────────────────────────▶ done
- *                        │
- *                        └──(changes requested)──▶ simplify ──▶ review ──▶ ...
- *
- * The harness (see extensions/) never lets the model pick the phase — the
- * machine does. A wrong-phase tool call is rejected with guidance, a
- * "changes requested" verdict with zero findings is inconsistent, and the
- * loop terminates only through one of four gates:
- *
- *   1. review_clean      — a review returned no actionable findings
- *   2. nothing_left      — a simplifification pass changed nothing
- *   3. budget_exhausted  — maxRounds simplify passes were applied
- *   4. stopped           — the loop was stopped manually
- *
- * Monotonicity is deliberate: the machine never silently re-reviews the same
- * state, and every transition is recorded in an event journal for tests and
- * post-hoc audit.
- */
-
-export type Phase = "idle" | "review" | "simplify" | "done";
+export type Phase = "idle" | "review" | "change" | "verify" | "final_review" | "done";
 export type Verdict = "clean" | "changes_requested";
-
-export interface LoopConfig {
-	/** Maximum number of simplify passes (rounds) before the loop stops. Default 3. */
-	maxRounds: number;
-}
+export type ChangeKind = "fix" | "simplify";
+export type Verification = "pending" | "passed" | "failed" | "unverified";
+export type LoopDoneReason = "complete" | "open_findings" | "checks_failed" | "unverified" | "stopped";
 
 export interface LoopEvent {
-	/** ISO-8601 timestamp. */
 	at: string;
-	kind: "start" | "review" | "simplify" | "stop" | "budget";
-	/** Phase the machine moved into as a result of this event. */
+	kind: "start" | "review" | "change" | "verify" | "stop";
 	phase: Phase;
 	detail?: string;
 }
 
 export interface LoopState {
 	phase: Phase;
-	/** Number of simplify passes applied so far. */
-	round: number;
 	scope?: string;
+	testCommand?: string;
 	startedAt?: string;
 	endedAt?: string;
 	doneReason?: LoopDoneReason;
-	/** Findings count of the most recent review. */
-	lastFindings: number;
-	/** Files reported as changed by the most recent simplify pass. */
-	lastChangedFiles: string[];
-	/** The verification command for this loop, when one was given. */
-	testCommand?: string;
-	/** True when the verification command has run successfully since the last change. */
-	testVerified: boolean;
+	findings: number;
+	changeKind?: ChangeKind;
+	changedFiles: string[];
+	verification: Verification;
 }
-
-export type LoopDoneReason = "review_clean" | "nothing_left" | "budget_exhausted" | "stopped";
 
 export type LoopResult =
 	| { ok: true; state: LoopState; message: string }
-	| { ok: false; error: string; expectedTool: string; state: LoopState };
-
-const REJECT = (machine: AuditLoopMachine, error: string): LoopResult => ({
-	ok: false,
-	error,
-	expectedTool: machine.expectedTool(),
-	state: machine.snapshot(),
-});
+	| { ok: false; state: LoopState; error: string; expectedTool: string };
 
 export class AuditLoopMachine {
-	private readonly maxRounds: number;
+	private state_: LoopState = { phase: "idle", findings: 0, changedFiles: [], verification: "pending" };
 	private events_: LoopEvent[] = [];
-	private state_: LoopState = {
-		phase: "idle",
-		round: 0,
-		lastFindings: 0,
-		lastChangedFiles: [],
-		testVerified: false,
-	};
 
-	constructor(config?: Partial<LoopConfig>) {
-		this.maxRounds = Math.max(1, Math.floor(config?.maxRounds ?? 3));
-	}
-
-	/** Current phase and counters (copy — callers may not mutate the machine). */
 	snapshot(): LoopState {
-		return { ...this.state_, lastChangedFiles: [...this.state_.lastChangedFiles] };
+		return { ...this.state_, changedFiles: [...this.state_.changedFiles] };
 	}
 
-	/** Event journal, oldest first. */
 	events(): readonly LoopEvent[] {
 		return this.events_;
 	}
 
-	/** The tool the model is expected to call next, for rejection messages. */
 	expectedTool(): string {
 		switch (this.state_.phase) {
 			case "idle":
 			case "done":
 				return "audit_loop_start";
 			case "review":
+			case "final_review":
 				return "audit_review";
-			case "simplify":
-				return "audit_simplify";
+			case "change":
+				return "audit_change";
+			case "verify":
+				return "audit_verify";
 		}
 	}
 
 	get isRunning(): boolean {
-		return this.state_.phase === "review" || this.state_.phase === "simplify";
+		return this.state_.phase !== "idle" && this.state_.phase !== "done";
 	}
 
-	private stamp(): string {
-		return new Date().toISOString();
+	private reject(error: string): LoopResult {
+		return { ok: false, state: this.snapshot(), error, expectedTool: this.expectedTool() };
 	}
 
-	private push(kind: LoopEvent["kind"], phase: Phase, detail?: string): void {
-		this.events_.push({ at: this.stamp(), kind, phase, ...(detail ? { detail } : {}) });
+	private transition(kind: LoopEvent["kind"], phase: Phase, message: string, detail?: string): LoopResult {
+		this.state_.phase = phase;
+		this.events_.push({ at: new Date().toISOString(), kind, phase, ...(detail ? { detail } : {}) });
+		return { ok: true, state: this.snapshot(), message };
 	}
 
-	/** Begin a loop. Allowed from idle or from a completed loop. */
+	private finish(kind: LoopEvent["kind"], reason: LoopDoneReason, message: string): LoopResult {
+		this.state_.doneReason = reason;
+		this.state_.endedAt = new Date().toISOString();
+		return this.transition(kind, "done", message, reason);
+	}
+
 	start(scope: string, testCommand?: string): LoopResult {
-		if (this.state_.phase === "review" || this.state_.phase === "simplify") {
-			return REJECT(
-				this,
-				`audit_loop_start refused: a loop is already running (phase=${this.state_.phase}, round=${this.state_.round}). Stop it first.`,
-			);
-		}
-		if (!scope || !scope.trim()) {
-			return REJECT(this, "audit_loop_start refused: scope is required (a path, a diff range, or a description of what to audit).");
-		}
+		if (this.isRunning) return this.reject(`audit_loop_start refused: a run is already in phase ${this.state_.phase}.`);
+		if (!scope.trim()) return this.reject("audit_loop_start refused: scope is required.");
 		const command = testCommand?.trim();
 		this.state_ = {
-			phase: "review",
-			round: 0,
+			phase: "idle",
 			scope: scope.trim(),
-			startedAt: this.stamp(),
-			lastFindings: 0,
-			lastChangedFiles: [],
 			...(command ? { testCommand: command } : {}),
-			testVerified: false,
+			startedAt: new Date().toISOString(),
+			findings: 0,
+			changedFiles: [],
+			verification: "pending",
 		};
-		this.push("start", "review", `scope: ${scope.trim()}`);
-		return { ok: true, state: this.snapshot(), message: `Audit loop started on: ${scope.trim()}. Next: audit_review.` };
+		return this.transition("start", "review", `Audit started on ${this.state_.scope}. Review the scope and call audit_review.`);
 	}
 
-	/** Record a review verdict. Only legal while phase === review. */
-	review(verdict: Verdict, findings: number, reviewedFiles: string[] = []): LoopResult {
-		if (this.state_.phase !== "review") {
-			return REJECT(this, `audit_review refused: the loop is in phase ${this.state_.phase}, not review.`);
-		}
-		if (verdict === "changes_requested" && findings < 1) {
-			return REJECT(this, "audit_review refused: verdict=changes_requested with 0 findings is self-contradictory. Use verdict=clean with 0 findings.");
-		}
-		this.state_.lastFindings = Math.max(0, Math.floor(findings));
-		// Verification is enforced, not requested: when the loop has a test
-		// command, "clean" is refused until that command has actually passed
-		// since the last change. The extension observes tool executions and
-		// reports the result through recordTestRun().
-		if (verdict === "clean" && this.state_.testCommand && !this.state_.testVerified) {
-			return REJECT(
-				this,
-				`audit_review refused: verdict=clean needs a successful run of the loop's test command since the last change. Run it first: ${this.state_.testCommand}`,
-			);
-		}
-		// A review reports files *reviewed*, not changed. Leave lastChangedFiles
-		// pointing at the most recent simplify pass, so an untouched tree does
-		// not report phantom changes in audit_loop_status.
+	review(verdict: Verdict, findings: number, route?: ChangeKind): LoopResult {
+		if (this.state_.phase !== "review") return this.reject(`audit_review refused: phase is ${this.state_.phase}.`);
+		if (!Number.isInteger(findings) || findings < 0) return this.reject("audit_review refused: findings must be a nonnegative integer.");
 		if (verdict === "clean") {
-			this.state_.phase = "done";
-			this.state_.endedAt = this.stamp();
-			this.state_.doneReason = "review_clean";
-			this.push("review", "done", `verdict: clean (${reviewedFiles.length} file(s) reviewed)`);
-			return {
-				ok: true,
-				state: this.snapshot(),
-				message: `Review clean after ${this.state_.round} simplify pass(es). Audit loop complete.`,
-			};
+			if (findings !== 0 || route) return this.reject("audit_review refused: a clean review must have zero findings and no route.");
+			this.state_.findings = 0;
+			return this.transition("review", "verify", "No actionable findings. Call audit_verify before completion.");
 		}
-		this.state_.phase = "simplify";
-		this.push("review", "simplify", `verdict: changes_requested (${this.state_.lastFindings} findings)`);
-		return {
-			ok: true,
-			state: this.snapshot(),
-			message: `Review requested changes (${this.state_.lastFindings} findings). Next: audit_simplify — apply behavior-preserving simplifications only; run the tests after each change.`,
-		};
+		if (findings === 0 || !route) return this.reject("audit_review refused: changes_requested needs a positive findings count and a fix or simplify route.");
+		this.state_.findings = findings;
+		this.state_.changeKind = route;
+		return this.transition("review", "change", `Review found ${findings} actionable finding(s). Address the selected ${route} finding, then call audit_change.`, route);
 	}
 
-	/** Record a simplify pass. Only legal while phase === simplify. */
-	simplify(changed: boolean, files: string[] = []): LoopResult {
-		if (this.state_.phase !== "simplify") {
-			return REJECT(this, `audit_simplify refused: the loop is in phase ${this.state_.phase}, not simplify.`);
-		}
-		if (!changed && files.length > 0) {
-			return REJECT(this, "audit_simplify refused: changed=false but files were listed. A pass that changed nothing must list no files.");
-		}
-		if (changed && files.length === 0) {
-			return REJECT(this, "audit_simplify refused: changed=true but no files were listed. List every file the pass modified.");
-		}
-		this.state_.lastChangedFiles = [...files];
-		if (!changed) {
-			this.state_.phase = "done";
-			this.state_.endedAt = this.stamp();
-			this.state_.doneReason = "nothing_left";
-			this.push("simplify", "done", "changed: false");
-			return { ok: true, state: this.snapshot(), message: "Simplification pass changed nothing. Audit loop complete." };
-		}
-		this.state_.round += 1;
-		// The pass changed code, so any earlier test run no longer covers it.
-		this.state_.testVerified = false;
-		if (this.state_.round > this.maxRounds) {
-			this.state_.phase = "done";
-			this.state_.endedAt = this.stamp();
-			this.state_.doneReason = "budget_exhausted";
-			this.push("budget", "done", `maxRounds=${this.maxRounds} exceeded`);
-			return {
-				ok: true,
-				state: this.snapshot(),
-				message: `Budget exhausted after ${this.maxRounds} simplify passes with findings still open. Audit loop complete (review the remaining findings manually).`,
-			};
-		}
-		this.state_.phase = "review";
-		this.push("simplify", "review", `changed: true (${files.length} file(s))`);
-		return {
-			ok: true,
-			state: this.snapshot(),
-			message:
-				`Simplification applied to ${files.length} file(s) in pass ${this.state_.round}. ` +
-				`Verify with the test suite, then call audit_review. ` +
-				`Review the diff of those files (e.g. \`git diff -- <files>\`), not just the tests: ` +
-				`a green suite does not prove the change preserved behavior.`,
-		};
+	change(kind: ChangeKind, changed: boolean, files: string[] = []): LoopResult {
+		if (this.state_.phase !== "change") return this.reject(`audit_change refused: phase is ${this.state_.phase}.`);
+		if (kind !== this.state_.changeKind) return this.reject(`audit_change refused: review selected ${this.state_.changeKind}.`);
+		if (changed !== (files.length > 0)) return this.reject("audit_change refused: changed and files disagree.");
+		if (!changed) return this.finish("change", "open_findings", "No change addressed the finding. Findings remain open.");
+		this.state_.changedFiles = [...files];
+		this.state_.verification = "pending";
+		return this.transition("change", "verify", "Change recorded. Run audit_verify, then review the resulting diff.", kind);
 	}
 
-	/**
-	 * Record the outcome of the loop's verification command. Called by the
-	 * extension when it observes the command run (see the tool execution
-	 * handlers), so a clean verdict rests on an observed run rather than on the
-	 * model's word.
-	 */
-	recordTestRun(succeeded: boolean): void {
-		this.state_.testVerified = succeeded;
+	verify(result: Exclude<Verification, "pending">): LoopResult {
+		if (this.state_.phase !== "verify") return this.reject(`audit_verify refused: phase is ${this.state_.phase}.`);
+		if (Boolean(this.state_.testCommand) === (result === "unverified")) {
+			return this.reject("audit_verify refused: verification result does not match whether a test command was configured.");
+		}
+		this.state_.verification = result;
+		if (this.state_.changedFiles.length === 0) {
+			const reason = result === "passed" ? "complete" : result === "failed" ? "checks_failed" : "unverified";
+			return this.finish("verify", reason, `Initial review finished: ${reason}.`);
+		}
+		return this.transition("verify", "final_review", `Verification ${result}. Review the change diff and tests with audit_review.`, result);
 	}
 
-	/** Manual stop from any running phase. */
+	finalReview(verdict: Verdict, findings: number): LoopResult {
+		if (this.state_.phase !== "final_review") return this.reject(`audit_review refused: phase is ${this.state_.phase}.`);
+		if (!Number.isInteger(findings) || findings < 0) return this.reject("audit_review refused: findings must be a nonnegative integer.");
+		if ((verdict === "clean") !== (findings === 0)) return this.reject("audit_review refused: verdict and findings disagree.");
+		this.state_.findings = findings;
+		const reason = findings > 0 ? "open_findings" : this.state_.verification === "passed" ? "complete" : this.state_.verification === "failed" ? "checks_failed" : "unverified";
+		return this.finish("review", reason, `Final review finished: ${reason}.`);
+	}
+
 	stop(reason = "stopped by user"): LoopResult {
-		if (!this.isRunning) {
-			return REJECT(this, `audit_loop_stop refused: the loop is not running (phase=${this.state_.phase}).`);
-		}
-		this.state_.phase = "done";
-		this.state_.endedAt = this.stamp();
-		this.state_.doneReason = "stopped";
-		this.push("stop", "done", reason);
-		return { ok: true, state: this.snapshot(), message: "Audit loop stopped. Use audit_loop_start to begin a new loop." };
+		if (!this.isRunning) return this.reject(`audit_loop_stop refused: phase is ${this.state_.phase}.`);
+		return this.finish("stop", "stopped", `Audit stopped: ${reason}`);
 	}
 }

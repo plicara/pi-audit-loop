@@ -4,8 +4,7 @@ Everything vendored or pinned in this package, with refresh procedures.
 
 ## Vendored skills
 
-Both skills are vendored into `skills/` (they ship inside the pi package so the
-loop works offline and unchanged). Attribution footers are in each SKILL.md.
+Both skills are vendored into `skills/` (they ship inside the pi package so the workflow works offline). Attribution footers are in each SKILL.md.
 
 ### skills/code-review
 
@@ -14,9 +13,9 @@ loop works offline and unchanged). Attribution footers are in each SKILL.md.
 | Upstream | https://github.com/anthropics/knowledge-work-plugins `engineering/skills/code-review/SKILL.md` |
 | Pinned rev | `a6d8653261a4` (2026-09-12) |
 | License | Apache-2.0 (full text shipped at `skills/code-review/LICENSE`) |
-| Adapted | dropped Claude Code `/command` syntax and connector references; added the audit-loop verdict mapping (verdict → `audit_review` arguments); added the post-simplification diff review (a green suite does not prove a simplification preserved behavior); prose pass for pi |
+| Adapted | dropped Claude Code `/command` syntax and connector references; added the audit verdict and route mapping; added the post-change diff review (a green suite does not prove a simplification preserved behavior); prose pass for pi |
 
-Refresh: `curl -fL https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/engineering/skills/code-review/SKILL.md -o skills/code-review/SKILL.md`, re-apply the two adaptations, update the pin + footer, run `npm run check`.
+Refresh: `curl -fL https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/engineering/skills/code-review/SKILL.md -o skills/code-review/SKILL.md`, re-apply the adaptations above, update the pin + footer, run `npm run check`.
 
 ### skills/code-simplification
 
@@ -25,7 +24,7 @@ Refresh: `curl -fL https://raw.githubusercontent.com/anthropics/knowledge-work-p
 | Upstream | https://github.com/addyosmani/agent-skills `skills/code-simplification/SKILL.md` |
 | Pinned rev | `be4e44a9fbc5` (2026-09-12) |
 | License | MIT (author notes it was itself adapted from anthropics/claude-plugins-official `plugins/code-simplifier`) |
-| Adapted | convention-file references generalized to `CLAUDE.md`/`AGENTS.md`; added the audit-loop verdict mapping; line-length pass |
+| Adapted | convention-file references generalized to `CLAUDE.md`/`AGENTS.md`; added the `audit_change` simplify mapping; line-length pass |
 
 Refresh: `curl -fL https://raw.githubusercontent.com/addyosmani/agent-skills/main/skills/code-simplification/SKILL.md -o skills/code-simplification/SKILL.md`, re-apply the adaptations, update the pin + footer, run `npm run check`.
 

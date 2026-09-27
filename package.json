@@ -1,11 +1,11 @@
 {
   "name": "@plicara/pi-audit-loop",
-  "version": "0.1.0",
-  "description": "Audit loop for pi: alternating structural code review (anthropics code-review) and behavior-preserving code simplification (addyosmani code-simplification) until convergence.",
+  "version": "0.2.0",
+  "description": "One-pass audit workflow for pi: review, route a finding to a fix or simplification, verify, and inspect the final diff.",
   "keywords": ["pi", "pi-package", "pi-extension", "audit", "code-review", "simplify", "skill"],
   "license": "MIT",
   "type": "module",
-  "files": ["extensions/", "skills/", "src/", "README.md", "LICENSE", "SOURCES.md"],
+  "files": ["extensions/", "skills/", "src/phase-machine.ts", "README.md", "LICENSE", "SOURCES.md"],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

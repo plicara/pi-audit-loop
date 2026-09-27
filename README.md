@@ -1,108 +1,55 @@
 # pi-audit-loop
 
-An audit loop for [pi](https://github.com/earendil-works/pi): alternating
-**code review** and **behavior-preserving simplification** until convergence.
-
-The loop is a two-phase state machine that the extension enforces, not the
-model. Each phase is defined by a vendored, vetted skill; the extension makes
-sure the phases alternate and that the loop terminates.
+A one-pass audit workflow for [pi](https://github.com/earendil-works/pi). Review a focused change, route one actionable finding to a behavior fix or a behavior-preserving simplification, verify, and inspect the resulting diff. Each run ends with an explicit outcome; another finding starts another run.
 
 ## Install
 
 ```bash
-# from the registry
 pi install npm:@plicara/pi-audit-loop
-
-# try it without installing
-pi -e npm:@plicara/pi-audit-loop
-
-# local development against a checkout
-pi -e /path/to/pi-audit-loop
 ```
 
-## How the loop works
+To try a local checkout, use `pi -e /path/to/pi-audit-loop`.
 
+## Workflow
+
+```text
+start → initial review → fix or simplify → verify → final review → outcome
 ```
-audit_loop_start  →  audit_review  →  audit_simplify  →  audit_review  →  …  →  done
-```
 
-| Tool | Phase | What it does |
-|---|---|---|
-| `audit_loop_start` | idle → review | Starts a loop on a scope (path, diff range, or description). Optional `test_command` is used as the verification gate. |
-| `audit_review` | review | Records a review verdict produced with the **code-review** skill (`verdict=clean/changes_requested`, `findings`, `files`). |
-| `audit_simplify` | simplify | Records a behavior-preserving simplification pass produced with the **code-simplification** skill (`changed`, `files`). |
-| `audit_loop_stop` | any → done | Manual stop. |
-| `audit_loop_status` | any | Show phase, round, and the expected next tool. |
+A clean initial review goes straight to verification and an outcome. A finding that receives no change ends as `open_findings`.
 
-### Enforcement (the part that makes it a machine, not a prompt)
+The initial review may consult current external documentation when an API, security claim, or standard is uncertain. It should first establish the expected behavior from the task and repository. Online research is conditional and does not add a tool or a mandatory phase.
 
-- A wrong-phase call is rejected with the expected next tool (e.g.
-  `audit_simplify` while in `review` fails with guidance).
-- `verdict=changes_requested` with `findings=0` is rejected as
-  self-contradictory.
-- `changed=false` with files listed is rejected; `changed=true` without files
-  is rejected.
-- The loop terminates only through one of four gates:
-
-  1. `review_clean` — a review found no actionable findings (and, per the
-     skill, tests pass);
-  2. `nothing_left` — a simplification pass changed nothing;
-  3. `budget_exhausted` — `maxRounds` simplify passes ran with findings still
-     open (default 3, configurable);
-  4. `stopped` — manual stop.
-
-Every state transition is appended to the session log as an `audit_loop_state` custom entry, giving a post-hoc audit trail and a future resume hook.
-
-### What this enforces — and what it does not
-
-The extension enforces the **shape** of the loop, not the **content** of the work.
-
-| Enforced by the extension | The model's responsibility |
+| Tool | Purpose |
 |---|---|
-| Phase order; a wrong-phase call is refused | That a “simplification” actually preserves behavior |
-| Contradictions in the recorded data (`findings`, `files`) | That a review's findings are correct and complete |
-| The four termination gates | That the test suite was really run, and is worth running |
+| `audit_loop_start` | Set one scope and an optional `test_command`. |
+| `audit_review` | Record the initial verdict and route, or the final diff verdict. Use the vendored `code-review` skill. |
+| `audit_change` | Record a `fix` or `simplify` change and its files. A no-op leaves findings open. |
+| `audit_verify` | Run the configured command in the project directory and record its exit status. |
+| `audit_loop_status` | Inspect phase, findings, verification, and outcome. |
+| `audit_loop_stop` | Stop the run explicitly. |
 
-The extension cannot see the diff, so it cannot tell a simplification from an ordinary edit. Behavior preservation rests on the vendored `code-simplification` skill and on your test suite — and a suite can pass while a behavior change introduces a regression the tests do not cover.
+For a behavior defect, write and observe a failing regression test before changing implementation, then make the smallest fix. For a simplification, preserve behavior and use the vendored `code-simplification` skill. Review the exact changed diff after verification; a passing suite alone does not establish correctness or behavioral equivalence.
 
-That is why the review following a simplification examines **that pass's diff** rather than the files again. It is the difference between “the tests still pass” and “the change is equivalent”; the code-review skill's Scope section explains how. Treat a `review_clean` that follows a simplification as a claim to verify, not a fact.
+## Outcomes and limits
 
-## The skills
+`complete` requires a clean review and a passing configured check. `open_findings` means a finding remains after a no-op or final review. `checks_failed` means the configured check failed. `unverified` means no check was configured. `stopped` is a manual stop. These outcomes are stored in Pi's `audit_loop_state` session entries.
 
-| Skill | Source | What it enforces |
-|---|---|---|
-| `code-review` | [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) `engineering/skills/code-review` (Apache-2.0, pinned) | Security / performance / correctness / maintainability review, verdict mapping, "no lint-nits, no duplicate findings, clean means verified". |
-| `code-simplification` | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) (MIT, pinned; in turn adapted by the author from [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) `plugins/code-simplifier`) | Behavior preservation, Chesterton's Fence, one simplification at a time with tests after each change, over-simplification red flags. |
+The extension enforces phase order, route consistency, and the observed exit status of its own verification command. It cannot judge the quality of a test, prove that a fix is correct, or prove that a simplification preserves behavior. A command can modify files while running; use a verification command appropriate for the project. Keep each scope small enough for one change and one final review.
 
-Both are vendored (see [SOURCES.md](SOURCES.md) for pins and refresh).
-
-## Why the "consensus ≠ correctness" gate matters
-
-Review → simplify → review converges to a stable state, but if both phases
-share the same blind spots the loop can agree with itself while staying wrong.
-The loop is therefore **verification-gated**: the code-review skill requires a
-passing test run before `verdict=clean`, and the code-simplification skill
-requires tests to pass after every change. Running the loop without a test
-suite weakens it — automate the check so the model can actually run it.
+This version replaces the repeated `audit_simplify` cycle with `audit_change` and `audit_verify`. It is a breaking workflow change from 0.1.x.
 
 ## Development
 
 ```bash
-npm ci --ignore-scripts
-npm run check        # typecheck + tests
-npm test             # tests only
+make setup
+make check
 ```
 
-The phase machine (`src/phase-machine.ts`) is pure TypeScript with no pi
-imports — every transition and gate is unit-tested in
-`src/phase-machine.test.ts`, and the extension factory is injectable
-(`machine` / `onStateChange` options) for integration tests.
+`make check` validates project metadata and runs TypeScript typecheck and tests. `npm run check` runs the TypeScript checks alone. The pure state machine lives in `src/phase-machine.ts`; `src/phase-machine.test.ts` and `src/extension.test.ts` cover the public transitions and Pi tool adapter.
 
-## License
+## Sources and license
 
-MIT — the vendored skills retain their own upstream licenses (Apache-2.0,
-MIT); see the attribution footers and [SOURCES.md](SOURCES.md).
+The two vendored skills and their upstream pins are documented in [SOURCES.md](SOURCES.md). The package is MIT; the vendored review skill retains Apache-2.0 and ships its license text.
 
-## Working in this repository
-
-Project metadata and research context live in [.plicara/README.md](.plicara/README.md); agent constraints live in [AGENTS.md](AGENTS.md). Use `make setup` and `make check` for the default local environment and verification. Expensive experiments, model downloads, and publication are separate explicit steps. Project status is authoritative in `.plicara/project.yaml`; no central board update is required.
+Project context lives in [.plicara/README.md](.plicara/README.md), and repository instructions live in [AGENTS.md](AGENTS.md).

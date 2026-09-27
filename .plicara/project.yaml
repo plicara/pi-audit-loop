@@ -1,7 +1,7 @@
 schema_version: 1
 id: pi-audit-loop
 name: "pi audit loop"
-description: "A verification-gated review and simplification extension for pi."
+description: "A one-pass review, change, and verification workflow for pi."
 kind: tool
 status: maintained
 repository: https://github.com/plicara/pi-audit-loop
