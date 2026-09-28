@@ -109,7 +109,7 @@ export class AuditLoopMachine {
 		if (this.state_.phase !== "change") return this.reject(`audit_change refused: phase is ${this.state_.phase}.`);
 		if (kind !== this.state_.changeKind) return this.reject(`audit_change refused: review selected ${this.state_.changeKind}.`);
 		if (changed !== (files.length > 0)) return this.reject("audit_change refused: changed and files disagree.");
-		if (!changed) return this.finish("change", "open_findings", "No change addressed the finding. Findings remain open.");
+		if (!changed) return this.finish("change", "open_findings", "No change addressed the finding. Findings remain open; the audit ended. Call audit_loop_status.");
 		this.state_.changedFiles = [...files];
 		this.state_.verification = "pending";
 		return this.transition("change", "verify", "Change recorded. Run audit_verify, then review the resulting diff.", kind);

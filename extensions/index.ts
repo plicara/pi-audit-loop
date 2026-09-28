@@ -60,7 +60,7 @@ export function createAuditLoopExtension(options: AuditLoopExtensionOptions = {}
 		pi.registerTool({
 			name: "audit_change",
 			label: "Audit Change",
-			description: "Record the selected change. For a behavior fix, write and observe a failing regression test before editing implementation, then make the smallest fix. For simplification, preserve behavior. changed=false leaves findings open.",
+			description: "Record the selected change. For a behavior fix, write and observe a failing regression test before editing implementation, then make the smallest fix. For simplification, preserve behavior. changed=false ends the run with open_findings; call audit_loop_status.",
 			parameters: Type.Object({
 				kind: Type.Enum(["fix", "simplify"]),
 				changed: Type.Boolean(),
