@@ -1,3 +1,5 @@
+import type { RepositorySnapshot } from "./repository-evidence.ts";
+
 export type Phase = "idle" | "review" | "change" | "verify" | "final_review" | "done";
 export type Verdict = "clean" | "changes_requested";
 export type ChangeKind = "fix" | "simplify";
@@ -23,6 +25,10 @@ export interface LoopState {
 	changeKind?: ChangeKind;
 	changedFiles: string[];
 	verification: Verification;
+	repository?: RepositorySnapshot;
+	changeFingerprint?: string;
+	verifiedFingerprint?: string;
+	verificationExitCode?: number;
 }
 
 export type LoopResult =
@@ -49,13 +55,14 @@ export class AuditLoopMachine {
 			...state,
 			reviewBasis: state.reviewBasis && typeof state.reviewBasis === "object" ? { ...state.reviewBasis } : {},
 			changedFiles: [...state.changedFiles],
+			...(state.repository ? { repository: { ...state.repository, files: { ...state.repository.files } } } : {}),
 		};
 		this.events_ = [];
 		return true;
 	}
 
 	snapshot(): LoopState {
-		return { ...this.state_, reviewBasis: { ...this.state_.reviewBasis }, changedFiles: [...this.state_.changedFiles] };
+		return { ...this.state_, reviewBasis: { ...this.state_.reviewBasis }, changedFiles: [...this.state_.changedFiles], ...(this.state_.repository ? { repository: { ...this.state_.repository, files: { ...this.state_.repository.files } } } : {}) };
 	}
 
 	events(): readonly LoopEvent[] {
@@ -97,7 +104,7 @@ export class AuditLoopMachine {
 		return this.transition(kind, "done", message, reason);
 	}
 
-	start(scope: string, testCommand?: string): LoopResult {
+	start(scope: string, testCommand?: string, repository?: RepositorySnapshot): LoopResult {
 		if (this.isRunning) return this.reject(`audit_loop_start refused: a run is already in phase ${this.state_.phase}.`);
 		if (!scope.trim()) return this.reject("audit_loop_start refused: scope is required.");
 		const command = testCommand?.trim();
@@ -110,6 +117,7 @@ export class AuditLoopMachine {
 			reviewBasis: {},
 			changedFiles: [],
 			verification: "pending",
+			...(repository ? { repository } : {}),
 		};
 		return this.transition("start", "review", `Audit started on ${this.state_.scope}. Review the scope and call audit_review.`);
 	}
@@ -131,27 +139,36 @@ export class AuditLoopMachine {
 		return this.transition("review", "change", `Review found ${findings} actionable finding(s). Address the selected ${route} finding, then call audit_change.`, route);
 	}
 
-	change(kind: ChangeKind, changed: boolean, files: string[] = []): LoopResult {
+	change(kind: ChangeKind, changed: boolean, files: string[] = [], fingerprint?: string): LoopResult {
 		if (this.state_.phase !== "change") return this.reject(`audit_change refused: phase is ${this.state_.phase}.`);
 		if (kind !== this.state_.changeKind) return this.reject(`audit_change refused: review selected ${this.state_.changeKind}.`);
 		if (changed !== (files.length > 0)) return this.reject("audit_change refused: changed and files disagree.");
 		if (!changed) return this.finish("change", "open_findings", "No change addressed the finding. Findings remain open; the audit ended. Call audit_loop_status.");
 		this.state_.changedFiles = [...files];
+		this.state_.changeFingerprint = fingerprint;
 		this.state_.verification = "pending";
 		return this.transition("change", "verify", "Change recorded. Run audit_verify, then review the resulting diff.", kind);
 	}
 
-	verify(result: Exclude<Verification, "pending">): LoopResult {
+	verify(result: Exclude<Verification, "pending">, fingerprint?: string, exitCode?: number): LoopResult {
 		if (this.state_.phase !== "verify") return this.reject(`audit_verify refused: phase is ${this.state_.phase}.`);
 		if (Boolean(this.state_.testCommand) === (result === "unverified")) {
 			return this.reject("audit_verify refused: verification result does not match whether a test command was configured.");
 		}
 		this.state_.verification = result;
+		this.state_.verifiedFingerprint = fingerprint;
+		this.state_.verificationExitCode = exitCode;
 		if (this.state_.changedFiles.length === 0) {
 			const reason = result === "passed" ? "complete" : result === "failed" ? "checks_failed" : "unverified";
 			return this.finish("verify", reason, `Initial review finished: ${reason}.`);
 		}
 		return this.transition("verify", "final_review", `Verification ${result}. Review the change diff and tests with audit_review.`, result);
+	}
+
+	invalidateVerification(): LoopResult {
+		if (this.state_.phase !== "final_review") return this.reject(`audit_review refused: phase is ${this.state_.phase}.`);
+		this.state_.verification = "failed";
+		return this.finish("review", "checks_failed", "Verification is stale: the repository changed after audit_verify. Start a new audit.");
 	}
 
 	finalReview(verdict: Verdict, findings: number, basis?: string): LoopResult {

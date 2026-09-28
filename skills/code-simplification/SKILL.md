@@ -176,9 +176,9 @@ Select `route=simplify` only when the initial review can name a concrete net cla
 
 When the initial review selects `route=simplify`:
 
-- Made a behavior-preserving simplification with a net clarity gain → call `audit_change` with `kind=simplify`, `changed=true`, and the modified files; then call `audit_verify` and review the diff.
-- The selected finding cannot be addressed without losing behavior or clarity → call `audit_change` with `kind=simplify`, `changed=false`. The finding remains open.
-- A simplification looked promising but could not be made behavior-preserving → do not record it; report changed=true **only** for what you actually shipped.
+- Made a behavior-preserving simplification with a net clarity gain → finish all edits, call `audit_change` with `kind=simplify`, then call `audit_verify` and review the reported changed paths.
+- The selected finding cannot be addressed without losing behavior or clarity → call `audit_change` with `kind=simplify` without an edit. The finding remains open.
+- A simplification looked promising but could not be made behavior-preserving → restore the attempt before calling `audit_change`; record only the change you actually kept.
 
 ## Language-Specific Guidance
 

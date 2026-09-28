@@ -47,7 +47,7 @@ Review code changes with a structured lens on security, performance, correctness
 
 When a diff is available (e.g. the audit loop scope is `main..HEAD`), review the changed lines and their immediate context. When a file path is given, review the file, focusing on the parts the loop most recently touched.
 
-**After `audit_change`, review the diff — not the files again.** Take the diff of the files the change listed (e.g. `git diff -- <files>`) and interrogate each hunk:
+**After `audit_change`, review the reported changed paths and their diff.** Use `git diff` and `git diff --cached` for tracked paths, and read any reported untracked files. Interrogate each hunk:
 
 - For `kind=simplify`, does it change a return value, guard, operator, default, or error path? If so, it may change behavior.
 - For `kind=fix`, does the new test express the intended behavior, fail before the fix, and pass after it? Does the fix stay within that behavior?

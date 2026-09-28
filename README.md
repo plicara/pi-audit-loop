@@ -22,10 +22,10 @@ The initial review may consult current external documentation when an API, secur
 
 | Tool | Purpose |
 |---|---|
-| `audit_loop_start` | Set one scope and an optional `test_command`. |
+| `audit_loop_start` | Set one scope and an optional `test_command`; capture the Git baseline. |
 | `audit_review` | Record the initial verdict and route, or the final diff verdict, with a concise `basis`. Use the vendored `code-review` skill. |
-| `audit_change` | Record a `fix` or `simplify` change and its files. A no-op leaves findings open. |
-| `audit_verify` | Run the configured command in the project directory and record its exit status. |
+| `audit_change` | Record a `fix` or `simplify` change; Git supplies and reports the changed files. A no-op leaves findings open. |
+| `audit_verify` | Run the configured command in the project directory and bind its exit status to the checked repository state. |
 | `audit_loop_status` | Inspect phase, findings, review bases, verification, and outcome. |
 | `audit_loop_stop` | Stop the run explicitly. |
 
@@ -37,11 +37,11 @@ In a Python checkout with a local virtual environment, start with `test_command:
 
 ## Outcomes and limits
 
-`complete` requires a clean review and a passing configured check. `open_findings` means a finding remains after a no-op or final review. `checks_failed` means the configured check failed. `unverified` means no check was configured. `stopped` is a manual stop. These outcomes are stored in Pi's `audit_loop_state` session entries; resuming a session restores its last audit state from the active branch.
+`complete` requires a clean review and a passing configured check. `open_findings` means a finding remains after a no-op or final review. `checks_failed` means the configured check failed or the repository changed before, during, or after verification. `unverified` means no check was configured. `stopped` is a manual stop. These outcomes are stored in Pi's `audit_loop_state` session entries; resuming a session restores its last audit state from the active branch.
 
-The extension enforces phase order, route consistency, and the observed exit status of its own verification command. It cannot judge the quality of a test, prove that a fix is correct, or prove that a simplification preserves behavior. A command can modify files while running; use a verification command appropriate for the project. Keep each scope small enough for one change and one final review.
+The extension requires a Git repository. It compares staged, unstaged, and untracked files with the baseline captured at start, including files already dirty before the audit. Verification fails if code changes after `audit_change` or the clean review, during the command, or before final review. Ignored files are outside this check; use a test command appropriate for the project. The extension cannot judge test quality, prove a fix correct, or prove a simplification preserves behavior. Keep each scope small enough for one change and one final review.
 
-Version 0.3.0 requires `basis` in every `audit_review` call. Version 0.2.0 replaced the repeated `audit_simplify` cycle with `audit_change` and `audit_verify`.
+Version 0.4.0 removes the agent-supplied `changed` and `files` arguments from `audit_change` and requires Git evidence for new runs. In-progress sessions saved by older versions should be stopped and restarted. Version 0.3.0 requires `basis` in every `audit_review` call. Version 0.2.0 replaced the repeated `audit_simplify` cycle with `audit_change` and `audit_verify`.
 
 ## Development
 
