@@ -87,17 +87,18 @@ Map the review onto the `audit_review` tool call:
 
 | Review outcome | `audit_review` arguments |
 |---|---|
-| No actionable findings | `verdict=clean`, `findings=0` |
-| Initial behavior defect | `verdict=changes_requested`, `findings=<count>`, `route=fix` |
-| Initial design or clarity finding | `verdict=changes_requested`, `findings=<count>`, `route=simplify` |
-| Final actionable findings | `verdict=changes_requested`, `findings=<count>`; the run ends with open findings |
+| No actionable findings | `verdict=clean`, `findings=0`, `basis=<what was reviewed and why it passes>` |
+| Initial behavior defect | `verdict=changes_requested`, `findings=<count>`, `route=fix`, `basis=<location, claim, evidence>` |
+| Initial design or clarity finding | `verdict=changes_requested`, `findings=<count>`, `route=simplify`, `basis=<location, claim, evidence>` |
+| Final actionable findings | `verdict=changes_requested`, `findings=<count>`, `basis=<location, claim, evidence>`; the run ends with open findings |
 
 Rules that keep the loop honest:
 
 1. A finding must be **actionable**: it names a concrete problem, a reason it matters, and a specific fix. Everything else is a suggestion, not a finding.
 2. Do not file a finding for something a linter or formatter already catches, and do not file duplicate findings across passes.
 3. An initial `clean` verdict still requires `audit_verify` before the run can complete. A final `clean` verdict requires review of the changed diff and tests; a green suite alone is insufficient.
-4. If a finding remains after the one change, report it in the final review. The run ends with open findings; start a new scoped run if further work is justified.
+4. Keep `basis` concise and tied to inspected code or an observed check. For `kind=simplify`, assess the whole changed diff for a net clarity gain; duplication moved into a helper or fewer lines alone is insufficient.
+5. If a finding remains after the one change, report it in the final review. The run ends with open findings; start a new scoped run if further work is justified.
 
 ## Tips
 
@@ -107,4 +108,4 @@ Rules that keep the loop honest:
 
 ---
 
-*Vendored from [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) `engineering/skills/code-review/SKILL.md` @ `a6d8653` (Apache-2.0). Adapted for pi: dropped Claude Code `/command` syntax and connector references, added the audit verdict and route mapping, added the post-change diff review, and made a prose pass. See SOURCES.md.*
+*Vendored from [anthropics/knowledge-work-plugins](https://github.com/anthropics/knowledge-work-plugins) `engineering/skills/code-review/SKILL.md` @ `a6d8653` (Apache-2.0). Adapted for pi: dropped Claude Code `/command` syntax and connector references, added the audit verdict, route, and basis mapping, added the post-change diff review, and made a prose pass. See SOURCES.md.*

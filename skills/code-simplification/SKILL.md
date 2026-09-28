@@ -168,12 +168,16 @@ COMPARE BEFORE AND AFTER:
 
 If the "simplified" version is harder to understand or review, revert. Not every simplification attempt succeeds.
 
+Before accepting a simplification, compare the whole changed diff, including callers and any new helper. Record a concrete net clarity gain in the final review basis. Moving duplicate lines into a helper or reducing line count is not enough when the result adds navigation, indirection, or harder error paths.
+
 ## Verdict for the audit loop
+
+Select `route=simplify` only when the initial review can name a concrete net clarity gain. If no worthwhile edit exists, record an initial `clean` review and call `audit_verify`.
 
 When the initial review selects `route=simplify`:
 
-- Made a behavior-preserving simplification → call `audit_change` with `kind=simplify`, `changed=true`, and the modified files; then call `audit_verify` and review the diff.
-- Nothing worth simplifying remains (code is already clean per the *When NOT to use* list) → call `audit_change` with `kind=simplify`, `changed=false`. The finding remains open.
+- Made a behavior-preserving simplification with a net clarity gain → call `audit_change` with `kind=simplify`, `changed=true`, and the modified files; then call `audit_verify` and review the diff.
+- The selected finding cannot be addressed without losing behavior or clarity → call `audit_change` with `kind=simplify`, `changed=false`. The finding remains open.
 - A simplification looked promising but could not be made behavior-preserving → do not record it; report changed=true **only** for what you actually shipped.
 
 ## Language-Specific Guidance
@@ -300,4 +304,4 @@ After completing a simplification pass:
 
 ---
 
-*Vendored from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) `skills/code-simplification/SKILL.md` @ `be4e44a` (MIT; originally adapted by the author from anthropics/claude-plugins-official `plugins/code-simplifier`). Adapted for pi: convention-file references, `audit_change` simplify mapping, prose line-length pass. See SOURCES.md.*
+*Vendored from [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) `skills/code-simplification/SKILL.md` @ `be4e44a` (MIT; originally adapted by the author from anthropics/claude-plugins-official `plugins/code-simplifier`). Adapted for pi: convention-file references, `audit_change` simplify mapping and net clarity check, prose line-length pass. See SOURCES.md.*

@@ -17,6 +17,15 @@ export function createAuditLoopExtension(options: AuditLoopExtensionOptions = {}
 	const machine = options.machine ?? new AuditLoopMachine();
 
 	return (pi: ExtensionAPI) => {
+		pi.on("session_start", (_event, ctx) => {
+			const branch = ctx.sessionManager.getBranch();
+			for (let i = branch.length - 1; i >= 0; i--) {
+				const entry = branch[i];
+				if (entry.type === "custom" && entry.customType === STATE_ENTRY_TYPE && machine.restore(entry.data)) return;
+			}
+			machine.restore(undefined);
+		});
+
 		const commit = (result: LoopResult): AuditToolResult => {
 			if (!result.ok) return { ...text(`audit_rejected: ${result.error} Expected next tool: ${result.expectedTool}.`), isError: true };
 			try {
@@ -31,10 +40,10 @@ export function createAuditLoopExtension(options: AuditLoopExtensionOptions = {}
 		pi.registerTool({
 			name: "audit_loop_start",
 			label: "Audit Start",
-			description: "Start one bounded audit of a scope. Establish expected behavior and relevant tests before review. Research external facts only when needed. A missing test command yields an unverified outcome.",
+			description: "Start one bounded audit of a scope. Establish expected behavior and relevant tests before review. Use a checkout-local test command where possible. Research external facts only when needed. A missing test command yields an unverified outcome.",
 			parameters: Type.Object({
 				scope: Type.String({ description: "One change or finding to audit." }),
-				test_command: Type.Optional(Type.String({ description: "Command to verify this scope, run directly by audit_verify in the project directory." })),
+				test_command: Type.Optional(Type.String({ description: "Command run by audit_verify in the project directory; prefer relative executables such as .venv/bin/python so a disposable checkout stays isolated." })),
 			}),
 			async execute(_id, params) {
 				return commit(machine.start(params.scope, params.test_command));
@@ -44,23 +53,24 @@ export function createAuditLoopExtension(options: AuditLoopExtensionOptions = {}
 		pi.registerTool({
 			name: "audit_review",
 			label: "Audit Review",
-			description: "Record the initial review or final diff review using the code-review skill. Initial findings choose route=fix for behavior defects or route=simplify for behavior-preserving design work. Final review checks the changed diff and tests. A clean verdict needs zero findings.",
+			description: "Record the initial review or final diff review using the code-review skill. Give a concise basis: for a finding, location, claim, and evidence; for a clean verdict, what was reviewed and why it passes. Initial findings choose route=fix or route=simplify; a clean initial review goes straight to audit_verify. Final review checks the changed diff and tests; for simplification, explain a net clarity gain beyond deduplication.",
 			parameters: Type.Object({
 				verdict: Type.Enum(["clean", "changes_requested"]),
 				findings: Type.Number({ description: "Number of actionable findings." }),
 				route: Type.Optional(Type.Enum(["fix", "simplify"])),
+				basis: Type.String({ description: "Concise review evidence. For a finding: location, claim, and evidence. For a clean review: scope and reason." }),
 			}),
 			async execute(_id, params) {
 				const verdict = params.verdict as Verdict;
-				if (machine.snapshot().phase === "final_review") return commit(machine.finalReview(verdict, params.findings));
-				return commit(machine.review(verdict, params.findings, params.route as ChangeKind | undefined));
+				if (machine.snapshot().phase === "final_review") return commit(machine.finalReview(verdict, params.findings, params.basis));
+				return commit(machine.review(verdict, params.findings, params.route as ChangeKind | undefined, params.basis));
 			},
 		});
 
 		pi.registerTool({
 			name: "audit_change",
 			label: "Audit Change",
-			description: "Record the selected change. For a behavior fix, write and observe a failing regression test before editing implementation, then make the smallest fix. For simplification, preserve behavior. changed=false ends the run with open_findings; call audit_loop_status.",
+			description: "Call only after audit_review selects changes_requested. For a behavior fix, observe a failing regression before the smallest code change. For simplification, preserve behavior and require a net clarity gain across the whole diff, beyond fewer lines or a new helper. If the selected finding cannot be addressed, changed=false ends with open_findings; call audit_loop_status.",
 			parameters: Type.Object({
 				kind: Type.Enum(["fix", "simplify"]),
 				changed: Type.Boolean(),
@@ -116,7 +126,9 @@ export function createAuditLoopExtension(options: AuditLoopExtensionOptions = {}
 					`audit_loop_status: phase=${state.phase} scope=${state.scope ?? "—"}`,
 					state.doneReason ? `done_reason=${state.doneReason}` : `next_tool=${machine.expectedTool()}`,
 					`findings=${state.findings} verification=${state.verification} changed=${state.changedFiles.length} file(s)`,
-				].join("\n"));
+					state.reviewBasis.initial ? `initial_basis=${state.reviewBasis.initial}` : "",
+					state.reviewBasis.final ? `final_basis=${state.reviewBasis.final}` : "",
+				].filter(Boolean).join("\n"));
 			},
 		});
 	};

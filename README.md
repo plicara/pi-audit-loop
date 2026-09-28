@@ -23,21 +23,25 @@ The initial review may consult current external documentation when an API, secur
 | Tool | Purpose |
 |---|---|
 | `audit_loop_start` | Set one scope and an optional `test_command`. |
-| `audit_review` | Record the initial verdict and route, or the final diff verdict. Use the vendored `code-review` skill. |
+| `audit_review` | Record the initial verdict and route, or the final diff verdict, with a concise `basis`. Use the vendored `code-review` skill. |
 | `audit_change` | Record a `fix` or `simplify` change and its files. A no-op leaves findings open. |
 | `audit_verify` | Run the configured command in the project directory and record its exit status. |
-| `audit_loop_status` | Inspect phase, findings, verification, and outcome. |
+| `audit_loop_status` | Inspect phase, findings, review bases, verification, and outcome. |
 | `audit_loop_stop` | Stop the run explicitly. |
 
 For a behavior defect, write and observe a failing regression test before changing implementation, then make the smallest fix. For a simplification, preserve behavior and use the vendored `code-simplification` skill. Review the exact changed diff after verification; a passing suite alone does not establish correctness or behavioral equivalence.
 
+Every `audit_review` call needs a `basis`. For a finding, give the location, claim, and evidence. For a clean verdict, say what was reviewed and why it passes. The initial and final bases remain in the saved audit state.
+
+In a Python checkout with a local virtual environment, start with `test_command: ".venv/bin/python -m pytest -q"`. Pi runs that command from the active project directory, so the relative interpreter path follows a disposable checkout rather than a source repository.
+
 ## Outcomes and limits
 
-`complete` requires a clean review and a passing configured check. `open_findings` means a finding remains after a no-op or final review. `checks_failed` means the configured check failed. `unverified` means no check was configured. `stopped` is a manual stop. These outcomes are stored in Pi's `audit_loop_state` session entries.
+`complete` requires a clean review and a passing configured check. `open_findings` means a finding remains after a no-op or final review. `checks_failed` means the configured check failed. `unverified` means no check was configured. `stopped` is a manual stop. These outcomes are stored in Pi's `audit_loop_state` session entries; resuming a session restores its last audit state from the active branch.
 
 The extension enforces phase order, route consistency, and the observed exit status of its own verification command. It cannot judge the quality of a test, prove that a fix is correct, or prove that a simplification preserves behavior. A command can modify files while running; use a verification command appropriate for the project. Keep each scope small enough for one change and one final review.
 
-This version replaces the repeated `audit_simplify` cycle with `audit_change` and `audit_verify`. It is a breaking workflow change from 0.1.x.
+Version 0.3.0 requires `basis` in every `audit_review` call. Version 0.2.0 replaced the repeated `audit_simplify` cycle with `audit_change` and `audit_verify`.
 
 ## Development
 
@@ -51,5 +55,3 @@ make check
 ## Sources and license
 
 The two vendored skills and their upstream pins are documented in [SOURCES.md](SOURCES.md). The package is MIT; the vendored review skill retains Apache-2.0 and ships its license text.
-
-Project context lives in [.plicara/README.md](.plicara/README.md), and repository instructions live in [AGENTS.md](AGENTS.md).

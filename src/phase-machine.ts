@@ -19,6 +19,7 @@ export interface LoopState {
 	endedAt?: string;
 	doneReason?: LoopDoneReason;
 	findings: number;
+	reviewBasis: { initial?: string; final?: string };
 	changeKind?: ChangeKind;
 	changedFiles: string[];
 	verification: Verification;
@@ -29,11 +30,32 @@ export type LoopResult =
 	| { ok: false; state: LoopState; error: string; expectedTool: string };
 
 export class AuditLoopMachine {
-	private state_: LoopState = { phase: "idle", findings: 0, changedFiles: [], verification: "pending" };
+	private state_: LoopState = { phase: "idle", findings: 0, reviewBasis: {}, changedFiles: [], verification: "pending" };
 	private events_: LoopEvent[] = [];
 
+	restore(saved: unknown): boolean {
+		if (saved === undefined) {
+			this.state_ = { phase: "idle", findings: 0, reviewBasis: {}, changedFiles: [], verification: "pending" };
+			this.events_ = [];
+			return true;
+		}
+		if (!saved || typeof saved !== "object") return false;
+		const state = saved as LoopState;
+		if (!["idle", "review", "change", "verify", "final_review", "done"].includes(state.phase)
+			|| !Number.isInteger(state.findings)
+			|| !Array.isArray(state.changedFiles)
+			|| !["pending", "passed", "failed", "unverified"].includes(state.verification)) return false;
+		this.state_ = {
+			...state,
+			reviewBasis: state.reviewBasis && typeof state.reviewBasis === "object" ? { ...state.reviewBasis } : {},
+			changedFiles: [...state.changedFiles],
+		};
+		this.events_ = [];
+		return true;
+	}
+
 	snapshot(): LoopState {
-		return { ...this.state_, changedFiles: [...this.state_.changedFiles] };
+		return { ...this.state_, reviewBasis: { ...this.state_.reviewBasis }, changedFiles: [...this.state_.changedFiles] };
 	}
 
 	events(): readonly LoopEvent[] {
@@ -85,22 +107,26 @@ export class AuditLoopMachine {
 			...(command ? { testCommand: command } : {}),
 			startedAt: new Date().toISOString(),
 			findings: 0,
+			reviewBasis: {},
 			changedFiles: [],
 			verification: "pending",
 		};
 		return this.transition("start", "review", `Audit started on ${this.state_.scope}. Review the scope and call audit_review.`);
 	}
 
-	review(verdict: Verdict, findings: number, route?: ChangeKind): LoopResult {
+	review(verdict: Verdict, findings: number, route?: ChangeKind, basis?: string): LoopResult {
 		if (this.state_.phase !== "review") return this.reject(`audit_review refused: phase is ${this.state_.phase}.`);
 		if (!Number.isInteger(findings) || findings < 0) return this.reject("audit_review refused: findings must be a nonnegative integer.");
+		if (!basis?.trim()) return this.reject("audit_review refused: basis is required.");
 		if (verdict === "clean") {
 			if (findings !== 0 || route) return this.reject("audit_review refused: a clean review must have zero findings and no route.");
 			this.state_.findings = 0;
+			this.state_.reviewBasis.initial = basis.trim();
 			return this.transition("review", "verify", "No actionable findings. Call audit_verify before completion.");
 		}
 		if (findings === 0 || !route) return this.reject("audit_review refused: changes_requested needs a positive findings count and a fix or simplify route.");
 		this.state_.findings = findings;
+		this.state_.reviewBasis.initial = basis.trim();
 		this.state_.changeKind = route;
 		return this.transition("review", "change", `Review found ${findings} actionable finding(s). Address the selected ${route} finding, then call audit_change.`, route);
 	}
@@ -128,11 +154,13 @@ export class AuditLoopMachine {
 		return this.transition("verify", "final_review", `Verification ${result}. Review the change diff and tests with audit_review.`, result);
 	}
 
-	finalReview(verdict: Verdict, findings: number): LoopResult {
+	finalReview(verdict: Verdict, findings: number, basis?: string): LoopResult {
 		if (this.state_.phase !== "final_review") return this.reject(`audit_review refused: phase is ${this.state_.phase}.`);
 		if (!Number.isInteger(findings) || findings < 0) return this.reject("audit_review refused: findings must be a nonnegative integer.");
 		if ((verdict === "clean") !== (findings === 0)) return this.reject("audit_review refused: verdict and findings disagree.");
+		if (!basis?.trim()) return this.reject("audit_review refused: basis is required.");
 		this.state_.findings = findings;
+		this.state_.reviewBasis.final = basis.trim();
 		const reason = findings > 0 ? "open_findings" : this.state_.verification === "passed" ? "complete" : this.state_.verification === "failed" ? "checks_failed" : "unverified";
 		return this.finish("review", reason, `Final review finished: ${reason}.`);
 	}

@@ -1,6 +1,6 @@
 {
   "name": "@plicara/pi-audit-loop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "One-pass audit workflow for pi: review, route a finding to a fix or simplification, verify, and inspect the final diff.",
   "keywords": ["pi", "pi-package", "pi-extension", "audit", "code-review", "simplify", "skill"],
   "license": "MIT",
